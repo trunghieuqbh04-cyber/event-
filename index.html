@@ -609,7 +609,7 @@ function onErr(err) { console.error(err); loadState = 'error'; applyLang(); }
 // The WebSocket relay lives in /server and runs on Render (Vercel cannot hold WebSocket connections).
 // After deploying it, paste its address below, or test with ?mp=wss://your-server.
 const MP_URL = new URLSearchParams(location.search).get('mp')
-  || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'ws://localhost:8080' : 'wss://REPLACE-WITH-YOUR-SERVER.onrender.com');
+  || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'ws://localhost:8080' : 'wss://demo-event-multiplayer.onrender.com');
 const MP_ON = !/REPLACE-WITH/.test(MP_URL);
 const peers = new Map(); // id -> { group, mixer, acts, cur, label, name, tx, ty, tz, tyaw }
 let ws = null, myId = null, mpRetry = 0, mpSendAt = 0, myAnim = 0, mpTotal = 1;
