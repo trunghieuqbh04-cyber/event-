@@ -41,6 +41,15 @@ wss.on('connection', (ws) => {
     p.last = now;
     let m;
     try { m = JSON.parse(data); } catch { return; }
+    if (m && m.t === 'c') { // chat line: relay to everyone, at most one per 700 ms per player
+      if (now - (p.lastChat || 0) < 700) return;
+      const text = String(m.m ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 120);
+      if (!text) return;
+      p.lastChat = now;
+      const out = JSON.stringify({ t: 'm', id: p.id, n: p.state ? p.state[5] : `Guest ${p.id}`, m: text });
+      for (const c of players.keys()) if (c.readyState === 1) c.send(out);
+      return;
+    }
     if (!m || m.t !== 'u') return;
     const x = num(m.x, -300, 300), y = num(m.y, -30, 60), z = num(m.z, -300, 300), r = num(m.r, -10, 10);
     if (x === null || y === null || z === null || r === null) return;

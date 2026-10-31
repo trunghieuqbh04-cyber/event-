@@ -116,6 +116,23 @@
   }
   #online::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3ddc84; margin-right: 7px; vertical-align: 1px; }
 
+  #chat {
+    position: fixed; z-index: 5; top: calc(96px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
+    width: min(320px, 62vw); display: grid; gap: 6px; pointer-events: none;
+  }
+  #chatlog { display: grid; gap: 4px; }
+  #chatlog p {
+    margin: 0; padding: 5px 10px; font-size: 13px; line-height: 1.35; background: var(--panel); border-radius: 12px;
+    overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; transition: opacity .6s;
+  }
+  #chatlog p b { color: var(--accent); font-weight: 600; margin-right: 5px; }
+  #chatlog p.old { opacity: 0; }
+  #chatIn {
+    pointer-events: auto; font: 500 13px/1 var(--body); color: var(--fg); background: rgba(6,18,52,.55); border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 13px; user-select: text; -webkit-user-select: text;
+  }
+  #chatIn:focus { background: var(--panel); outline: 2px solid var(--accent); }
+
   /* touch controls */
   #touch { display: none; }
   body.touch #touch { display: block; }
@@ -143,6 +160,10 @@
 <div id="crosshair" hidden></div>
 <div class="brand"><img src="logo.png" alt=""><div><b>Demo Event</b><small data-i18n="tag"></small></div></div>
 <div id="online" hidden></div>
+<div id="chat" hidden>
+  <div id="chatlog"></div>
+  <input id="chatIn" maxlength="120" autocomplete="off" spellcheck="false">
+</div>
 <div class="topright">
   <div class="seg" role="group" aria-label="Language">
     <button id="lEN" data-lang="en">EN</button><button id="lVI" data-lang="vi">VIE</button>
@@ -183,6 +204,7 @@
 <div id="intro">
   <div class="card">
     <header><img src="logo.png" alt=""><div><h1>Demo Event</h1><p data-i18n="intro"></p></div></header>
+    <label class="namefield"><span data-i18n="yourname"></span><input id="nameIn" maxlength="16" autocomplete="off" spellcheck="false"></label>
     <div class="keys desk-only">
       <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span data-i18n="k_move"></span>
       <span><kbd>Space</kbd></span><span data-i18n="k_jump"></span>
@@ -192,6 +214,7 @@
       <span><kbd>F</kbd></span><span data-i18n="k_fly"></span>
       <span><kbd>1</kbd>–<kbd>5</kbd></span><span data-i18n="k_zones"></span>
       <span><kbd>N</kbd><kbd>H</kbd><kbd>B</kbd></span><span data-i18n="k_light"></span>
+      <span><kbd>Enter</kbd></span><span data-i18n="k_chat"></span>
       <span><kbd>Esc</kbd></span><span data-i18n="k_esc"></span>
     </div>
     <div class="keys touch-only">
@@ -199,7 +222,6 @@
       <span><kbd>☝</kbd></span><span data-i18n="t_look"></span>
       <span><kbd>⤒</kbd></span><span data-i18n="t_jump"></span>
     </div>
-    <label class="namefield"><span data-i18n="yourname"></span><input id="nameIn" maxlength="16" autocomplete="off" spellcheck="false"></label>
     <div id="loadwrap"><div class="bar"><i id="prog"></i></div><span id="loadnote"></span></div>
     <button class="go" id="goBtn" disabled></button>
   </div>
@@ -230,6 +252,7 @@ const T = {
     k_move: 'Walk', k_jump: 'Jump (fly up when flying)', k_run: 'Run (fly down when flying)', k_look: 'Look around',
     k_view: 'Switch view: first, third, front', k_fly: 'Fly mode on/off', k_esc: 'Pause and show the cursor',
     yourname: 'Your name (shown above your avatar)', online: 'online',
+    chatph: 'Enter to chat', chatphTouch: 'Tap to chat', k_chat: 'Open chat, then Enter to send',
     k_zones: 'Jump to: entrance, check-in, hall, stage, Razer', k_light: 'Toggle night mode, moving heads, blink',
     t_move: 'Left stick to walk', t_look: 'Drag anywhere else to look around', t_jump: 'Buttons on the right to jump and run',
     loading: 'Loading the venue', building: 'Preparing walls and floor…', start: 'Start exploring', resume: 'Resume',
@@ -243,6 +266,7 @@ const T = {
     k_move: 'Di chuyển', k_jump: 'Nhảy (bay lên khi đang bay)', k_run: 'Chạy nhanh (bay xuống khi đang bay)', k_look: 'Xoay góc nhìn',
     k_view: 'Đổi góc nhìn: thứ nhất, thứ ba, phía trước', k_fly: 'Bật/tắt chế độ bay', k_esc: 'Tạm dừng, hiện con trỏ',
     yourname: 'Tên của bạn (hiện trên đầu nhân vật)', online: 'đang online',
+    chatph: 'Nhấn Enter để chat', chatphTouch: 'Chạm để chat', k_chat: 'Mở chat, rồi Enter để gửi',
     k_zones: 'Đi tới: lối vào, check-in, sảnh, sân khấu, Razer', k_light: 'Bật/tắt chế độ tối, đèn quét, nhấp nháy',
     t_move: 'Cần trái để di chuyển', t_look: 'Vuốt chỗ khác trên màn hình để xoay', t_jump: 'Nút bên phải để nhảy và chạy',
     loading: 'Đang tải sảnh sự kiện', building: 'Đang dựng tường và sàn…', start: 'Bắt đầu khám phá', resume: 'Tiếp tục',
@@ -259,6 +283,7 @@ function applyLang() {
   document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
   document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === lang));
   document.getElementById('tViewLbl').textContent = t('v' + viewMode);
+  document.getElementById('chatIn').placeholder = t(isTouch ? 'chatphTouch' : 'chatph');
   const go = document.getElementById('goBtn');
   go.textContent = loadState === 'ready' ? (started ? t('resume') : t('start')) : t('loading') + '…';
   const note = document.getElementById('loadnote');
@@ -437,6 +462,7 @@ addEventListener('keydown', (e) => {
   if (!started || e.target.tagName === 'INPUT') return; // let the name field take normal typing
   keys[e.code] = true;
   if (e.code === 'KeyV') cycleView();
+  if (e.code === 'Enter' && intro.hidden && !document.getElementById('chat').hidden) { e.preventDefault(); document.getElementById('chatIn').focus(); return; }
   if (e.code === 'KeyF') toggleFly();
   // dock shortcuts: work while the mouse is captured, so the bottom buttons never need the cursor
   const hot = HOTKEYS[e.code.replace('Numpad', 'Digit')];
@@ -656,8 +682,26 @@ function removePeer(id) {
 }
 function setOnline() {
   onlineEl.hidden = !(ws && ws.readyState === 1);
+  document.getElementById('chat').hidden = onlineEl.hidden;
   onlineEl.textContent = `${mpTotal} ${t('online')}`;
 }
+
+// chat: Enter opens the box (works while the mouse is captured), Enter again sends and returns to the game
+const chatIn = document.getElementById('chatIn'), chatLog = document.getElementById('chatlog');
+function addChat(name, text) {
+  const p = document.createElement('p'), b = document.createElement('b');
+  b.textContent = name; p.append(b, document.createTextNode(text)); chatLog.append(p);
+  while (chatLog.children.length > 7) chatLog.firstChild.remove();
+  setTimeout(() => p.classList.add('old'), 14000); setTimeout(() => p.remove(), 14700);
+}
+chatIn.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.code === 'Enter') {
+    const text = chatIn.value.trim();
+    if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'c', m: text }));
+    chatIn.value = ''; chatIn.blur();
+  } else if (e.code === 'Escape') chatIn.blur();
+});
 function mpConnect() {
   if (!MP_ON) return;
   try { ws = new WebSocket(MP_URL); } catch { return; }
@@ -665,6 +709,7 @@ function mpConnect() {
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.t === 'hi') { myId = m.id; return; }
+    if (m.t === 'm') { addChat(String(m.n), String(m.m)); return; }
     if (m.t !== 's') return;
     mpTotal = m.n; setOnline();
     const seen = new Set();
