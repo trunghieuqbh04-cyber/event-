@@ -1,0 +1,9 @@
+# Render Blueprint: creates the multiplayer WebSocket server from the /server folder.
+services:
+  - type: web
+    name: demo-event-multiplayer
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start

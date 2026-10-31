@@ -103,6 +103,19 @@
   .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--navy), var(--accent)); transition: width .2s; }
   #loadnote { font-size: 12.5px; color: var(--muted); }
 
+  .namefield { display: grid; gap: 6px; font-size: 12.5px; color: var(--muted); }
+  .namefield input {
+    font: 500 14px/1 var(--body); color: var(--fg); background: rgba(255,255,255,.07); border: 1px solid var(--line);
+    border-radius: 10px; padding: 11px 12px; user-select: text; -webkit-user-select: text;
+  }
+  .namefield input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #online {
+    position: fixed; top: calc(60px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); z-index: 5;
+    font-size: 12px; font-weight: 600; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+    pointer-events: none; backdrop-filter: blur(6px);
+  }
+  #online::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #3ddc84; margin-right: 7px; vertical-align: 1px; }
+
   /* touch controls */
   #touch { display: none; }
   body.touch #touch { display: block; }
@@ -129,6 +142,7 @@
 <div id="stage"></div>
 <div id="crosshair" hidden></div>
 <div class="brand"><img src="logo.png" alt=""><div><b>Demo Event</b><small data-i18n="tag"></small></div></div>
+<div id="online" hidden></div>
 <div class="topright">
   <div class="seg" role="group" aria-label="Language">
     <button id="lEN" data-lang="en">EN</button><button id="lVI" data-lang="vi">VIE</button>
@@ -185,6 +199,7 @@
       <span><kbd>☝</kbd></span><span data-i18n="t_look"></span>
       <span><kbd>⤒</kbd></span><span data-i18n="t_jump"></span>
     </div>
+    <label class="namefield"><span data-i18n="yourname"></span><input id="nameIn" maxlength="16" autocomplete="off" spellcheck="false"></label>
     <div id="loadwrap"><div class="bar"><i id="prog"></i></div><span id="loadnote"></span></div>
     <button class="go" id="goBtn" disabled></button>
   </div>
@@ -202,6 +217,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
 
 /* ================= i18n ================= */
@@ -213,6 +229,7 @@ const T = {
     intro: 'Walk through the event venue concept as a character, like a block game.',
     k_move: 'Walk', k_jump: 'Jump (fly up when flying)', k_run: 'Run (fly down when flying)', k_look: 'Look around',
     k_view: 'Switch view: first, third, front', k_fly: 'Fly mode on/off', k_esc: 'Pause and show the cursor',
+    yourname: 'Your name (shown above your avatar)', online: 'online',
     k_zones: 'Jump to: entrance, check-in, hall, stage, Razer', k_light: 'Toggle night mode, moving heads, blink',
     t_move: 'Left stick to walk', t_look: 'Drag anywhere else to look around', t_jump: 'Buttons on the right to jump and run',
     loading: 'Loading the venue', building: 'Preparing walls and floor…', start: 'Start exploring', resume: 'Resume',
@@ -225,6 +242,7 @@ const T = {
     intro: 'Điều khiển nhân vật đi dạo quanh bản thiết kế sự kiện, như trong game khối vuông.',
     k_move: 'Di chuyển', k_jump: 'Nhảy (bay lên khi đang bay)', k_run: 'Chạy nhanh (bay xuống khi đang bay)', k_look: 'Xoay góc nhìn',
     k_view: 'Đổi góc nhìn: thứ nhất, thứ ba, phía trước', k_fly: 'Bật/tắt chế độ bay', k_esc: 'Tạm dừng, hiện con trỏ',
+    yourname: 'Tên của bạn (hiện trên đầu nhân vật)', online: 'đang online',
     k_zones: 'Đi tới: lối vào, check-in, sảnh, sân khấu, Razer', k_light: 'Bật/tắt chế độ tối, đèn quét, nhấp nháy',
     t_move: 'Cần trái để di chuyển', t_look: 'Vuốt chỗ khác trên màn hình để xoay', t_jump: 'Nút bên phải để nhảy và chạy',
     loading: 'Đang tải sảnh sự kiện', building: 'Đang dựng tường và sàn…', start: 'Bắt đầu khám phá', resume: 'Tiếp tục',
@@ -310,6 +328,7 @@ addMover([7.6, 5.4, 20.6], [8.4, 0.6, 25.0], 0xffd7a0, 2.1, [1.6, 0.5], 25, 7.2)
 const avatar = new THREE.Group();
 scene.add(avatar);
 let mixer = null; const acts = {}; let curAct = null;
+let avatarProto = null, avatarClips = []; // kept so other players' avatars can be cloned from it
 function playAct(name, fade = 0.25) {
   const a = acts[name]; if (!a || curAct === a) return;
   a.reset().setEffectiveWeight(1).fadeIn(fade).play();
@@ -338,6 +357,7 @@ function loadAvatar() {
       o.material = new THREE.MeshStandardMaterial({ color: joints ? 0xf45120 : 0xdfe6f5, roughness: joints ? 0.45 : 0.55, metalness: joints ? 0.2 : 0.05 });
     });
     avatar.add(m);
+    avatarProto = m; avatarClips = g.animations;
     mixer = new THREE.AnimationMixer(m);
     for (const c of g.animations) acts[c.name] = mixer.clipAction(c);
     playAct('idle', 0);
@@ -414,7 +434,7 @@ const HOTKEYS = {
 const canvas = renderer.domElement;
 addEventListener('keydown', (e) => {
   if (e.code === 'F5') { e.preventDefault(); cycleView(); return; }
-  if (!started) return;
+  if (!started || e.target.tagName === 'INPUT') return; // let the name field take normal typing
   keys[e.code] = true;
   if (e.code === 'KeyV') cycleView();
   if (e.code === 'KeyF') toggleFly();
@@ -580,9 +600,107 @@ fetchModel().then(buf => loader.parse(buf, './', (gltf) => {
     document.getElementById('prog').style.width = '100%';
     loadState = 'ready'; document.getElementById('goBtn').disabled = false; applyLang();
     window.__ready = true;
+    mpConnect();
   }, 30);
 }, onErr)).catch(onErr);
 function onErr(err) { console.error(err); loadState = 'error'; applyLang(); }
+
+/* ================= multiplayer ================= */
+// The WebSocket relay lives in /server and runs on Render (Vercel cannot hold WebSocket connections).
+// After deploying it, paste its address below, or test with ?mp=wss://your-server.
+const MP_URL = new URLSearchParams(location.search).get('mp')
+  || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'ws://localhost:8080' : 'wss://REPLACE-WITH-YOUR-SERVER.onrender.com');
+const MP_ON = !/REPLACE-WITH/.test(MP_URL);
+const peers = new Map(); // id -> { group, mixer, acts, cur, label, name, tx, ty, tz, tyaw }
+let ws = null, myId = null, mpRetry = 0, mpSendAt = 0, myAnim = 0, mpTotal = 1;
+const onlineEl = document.getElementById('online'), nameIn = document.getElementById('nameIn');
+try { nameIn.value = localStorage.getItem('demoEventName') || ''; } catch {}
+nameIn.addEventListener('input', () => { try { localStorage.setItem('demoEventName', nameIn.value); } catch {} });
+const myName = () => nameIn.value.trim().slice(0, 16);
+
+function nameLabel(text) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const x = c.getContext('2d');
+  x.font = '600 28px "Be Vietnam Pro", system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  const w = Math.min(244, x.measureText(text).width + 28);
+  x.fillStyle = 'rgba(6,18,52,.78)'; x.beginPath(); x.roundRect((256 - w) / 2, 8, w, 48, 24); x.fill();
+  x.fillStyle = '#fff'; x.fillText(text, 128, 33, 232);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  s.scale.set(1.25, 0.31, 1); s.position.y = 2.15; s.renderOrder = 10;
+  return s;
+}
+function addPeer(id) {
+  if (!avatarProto) return null;
+  const group = new THREE.Group();
+  const m = SkeletonUtils.clone(avatarProto);
+  const hue = ((id * 47) % 360) / 360;
+  m.traverse(o => {
+    if (!o.isMesh) return;
+    o.frustumCulled = false;
+    o.material = o.material.clone();
+    if (o.material.color.getHex() === 0xdfe6f5) o.material.color.setHSL(hue, 0.6, 0.7); // body tint per player; joints keep the accent
+  });
+  group.add(m); scene.add(group);
+  const pm = new THREE.AnimationMixer(m), pa = {};
+  for (const c of avatarClips) pa[c.name] = pm.clipAction(c);
+  const p = { group, mixer: pm, acts: pa, cur: null, label: null, name: '', tx: 0, ty: 0, tz: 0, tyaw: 0, fresh: true };
+  peers.set(id, p); return p;
+}
+function removePeer(id) {
+  const p = peers.get(id); if (!p) return;
+  scene.remove(p.group);
+  if (p.label) { p.label.material.map.dispose(); p.label.material.dispose(); }
+  p.group.traverse(o => { if (o.isMesh) o.material.dispose(); });
+  peers.delete(id);
+}
+function setOnline() {
+  onlineEl.hidden = !(ws && ws.readyState === 1);
+  onlineEl.textContent = `${mpTotal} ${t('online')}`;
+}
+function mpConnect() {
+  if (!MP_ON) return;
+  try { ws = new WebSocket(MP_URL); } catch { return; }
+  ws.onopen = () => { mpRetry = 0; setOnline(); };
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.t === 'hi') { myId = m.id; return; }
+    if (m.t !== 's') return;
+    mpTotal = m.n; setOnline();
+    const seen = new Set();
+    for (const [id, x, y, z, yaw, anim, name] of m.p) {
+      if (id === myId) continue;
+      seen.add(id);
+      const p = peers.get(id) || addPeer(id); if (!p) continue;
+      p.tx = x; p.ty = y; p.tz = z; p.tyaw = yaw; p.anim = anim;
+      if (p.fresh) { p.group.position.set(x, y, z); p.group.rotation.y = yaw; p.fresh = false; }
+      if (name !== p.name) { p.name = name; if (p.label) p.group.remove(p.label); p.label = nameLabel(name); p.group.add(p.label); }
+    }
+    for (const id of [...peers.keys()]) if (!seen.has(id)) removePeer(id);
+  };
+  ws.onclose = () => {
+    for (const id of [...peers.keys()]) removePeer(id);
+    myId = null; mpTotal = 1; setOnline();
+    setTimeout(mpConnect, Math.min(10000, 1000 * 2 ** mpRetry++));
+  };
+  ws.onerror = () => ws.close();
+}
+function mpUpdate(dt, now) {
+  if (ws && ws.readyState === 1 && started && now - mpSendAt > 66) {
+    mpSendAt = now;
+    ws.send(JSON.stringify({ t: 'u', x: +player.x.toFixed(2), y: +(player.y - SEG - R).toFixed(2), z: +player.z.toFixed(2), r: +bodyYaw.toFixed(2), a: myAnim, n: myName() }));
+  }
+  const k = 1 - Math.exp(-dt * 12);
+  for (const p of peers.values()) {
+    const g = p.group;
+    if (g.position.distanceToSquared(tv.set(p.tx, p.ty, p.tz)) > 16) g.position.copy(tv); else g.position.lerp(tv, k); // teleports snap
+    let d = p.tyaw - g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); g.rotation.y += d * k;
+    const a = p.acts[['idle', 'walk', 'run'][p.anim] || 'idle'];
+    if (a && p.cur !== a) { a.reset().fadeIn(0.2).play(); if (p.cur) p.cur.fadeOut(0.2); p.cur = a; }
+    if (p.acts.walk) p.acts.walk.timeScale = 2.8;
+    p.mixer.update(dt);
+  }
+}
 
 /* ================= loop ================= */
 function resize() {
@@ -622,6 +740,7 @@ function frame(now) {
     const feetY = player.y - SEG - R;
     avatar.position.set(player.x, feetY, player.z);
     const hv = Math.hypot(vel.x, vel.z);
+    myAnim = hv > 5 ? 2 : hv > 0.3 ? 1 : 0;
     if (mixer) {
       if (fly || (!onGround && vel.y > 0.5)) playAct(hv > 0.5 ? 'walk' : 'idle');
       else playAct(hv > 5 ? 'run' : hv > 0.3 ? 'walk' : 'idle');
@@ -668,6 +787,7 @@ function frame(now) {
     const k = state.blink && !reduce ? (p.fast ? 0.8 + 0.2 * Math.sin(time * 2.4 + p.ph) : 0.93 + 0.07 * Math.sin(time * 0.7 + p.ph)) : 1;
     p.m.emissiveIntensity = p.base * k * (state.night ? 1 : 0.6);
   }
+  mpUpdate(dt, now);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
