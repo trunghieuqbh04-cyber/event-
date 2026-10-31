@@ -189,6 +189,8 @@
     <button id="tNight" aria-pressed="true"><kbd>N</kbd><span data-i18n="night"></span></button>
     <button id="tShow" aria-pressed="true"><kbd>H</kbd><span data-i18n="beams"></span></button>
     <button id="tBlink" aria-pressed="true"><kbd>B</kbd><span data-i18n="blink"></span></button>
+    <span class="label" data-i18n="sound"></span>
+    <button id="tMusic" aria-pressed="true"><kbd>M</kbd><span data-i18n="music"></span></button>
   </div>
 </div>
 
@@ -214,6 +216,7 @@
       <span><kbd>F</kbd></span><span data-i18n="k_fly"></span>
       <span><kbd>1</kbd>–<kbd>5</kbd></span><span data-i18n="k_zones"></span>
       <span><kbd>N</kbd><kbd>H</kbd><kbd>B</kbd></span><span data-i18n="k_light"></span>
+      <span><kbd>M</kbd></span><span data-i18n="k_music"></span>
       <span><kbd>Enter</kbd></span><span data-i18n="k_chat"></span>
       <span><kbd>Esc</kbd></span><span data-i18n="k_esc"></span>
     </div>
@@ -252,6 +255,7 @@ const T = {
     k_move: 'Walk', k_jump: 'Jump (fly up when flying)', k_run: 'Run (fly down when flying)', k_look: 'Look around',
     k_view: 'Switch view: first, third, front', k_fly: 'Fly mode on/off', k_esc: 'Pause and show the cursor',
     yourname: 'Your name (shown above your avatar)', online: 'online',
+    sound: 'Sound', music: 'Music', k_music: 'Music on/off',
     chatph: 'Enter to chat', chatphTouch: 'Tap to chat', k_chat: 'Open chat, then Enter to send',
     k_zones: 'Jump to: entrance, check-in, hall, stage, Razer', k_light: 'Toggle night mode, moving heads, blink',
     t_move: 'Left stick to walk', t_look: 'Drag anywhere else to look around', t_jump: 'Buttons on the right to jump and run',
@@ -266,6 +270,7 @@ const T = {
     k_move: 'Di chuyển', k_jump: 'Nhảy (bay lên khi đang bay)', k_run: 'Chạy nhanh (bay xuống khi đang bay)', k_look: 'Xoay góc nhìn',
     k_view: 'Đổi góc nhìn: thứ nhất, thứ ba, phía trước', k_fly: 'Bật/tắt chế độ bay', k_esc: 'Tạm dừng, hiện con trỏ',
     yourname: 'Tên của bạn (hiện trên đầu nhân vật)', online: 'đang online',
+    sound: 'Âm thanh', music: 'Nhạc nền', k_music: 'Bật/tắt nhạc nền',
     chatph: 'Nhấn Enter để chat', chatphTouch: 'Chạm để chat', k_chat: 'Mở chat, rồi Enter để gửi',
     k_zones: 'Đi tới: lối vào, check-in, sảnh, sân khấu, Razer', k_light: 'Bật/tắt chế độ tối, đèn quét, nhấp nháy',
     t_move: 'Cần trái để di chuyển', t_look: 'Vuốt chỗ khác trên màn hình để xoay', t_jump: 'Nút bên phải để nhảy và chạy',
@@ -454,7 +459,7 @@ function physicsStep(dt, wish) {
 /* ================= input ================= */
 const HOTKEYS = {
   Digit1: '[data-zone=entry]', Digit2: '[data-zone=checkin]', Digit3: '[data-zone=hall]', Digit4: '[data-zone=stage]', Digit5: '[data-zone=razer]',
-  KeyN: '#tNight', KeyH: '#tShow', KeyB: '#tBlink',
+  KeyN: '#tNight', KeyH: '#tShow', KeyB: '#tBlink', KeyM: '#tMusic',
 };
 const canvas = renderer.domElement;
 addEventListener('keydown', (e) => {
@@ -549,7 +554,7 @@ function showIntro() { intro.hidden = false; applyLang(); }
 document.getElementById('helpBtn').addEventListener('click', (e) => { e.currentTarget.blur(); if (document.pointerLockElement) document.exitPointerLock(); showIntro(); });
 document.getElementById('goBtn').addEventListener('click', () => {
   if (loadState !== 'ready') return;
-  started = true; intro.hidden = true; applyLang();
+  started = true; intro.hidden = true; applyLang(); startMusic();
   if (!isTouch) { const p = canvas.requestPointerLock?.(); if (p && p.catch) p.catch(() => {}); }
 });
 
@@ -631,6 +636,56 @@ fetchModel().then(buf => loader.parse(buf, './', (gltf) => {
 }, onErr)).catch(onErr);
 function onErr(err) { console.error(err); loadState = 'error'; applyLang(); }
 
+/* ================= background music ================= */
+// Generated live with WebAudio (a music-box arpeggio over C - Am - F - G), so there is no audio file and no licensing question.
+// To use a real track instead, set MUSIC_FILE to its path (for example './music.mp3').
+const MUSIC_FILE = '';
+const music = { ctx: null, bus: null, on: true, timer: null, next: 0, step: 0, el: null };
+const CHORDS = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]];
+const ARP = [0, 1, 2, 1, 0, 1, 2, 1], BPM = 96;
+const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
+function tone(t, freq, dur, vol, type, attack = 0.01) {
+  const o = music.ctx.createOscillator(), g = music.ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(music.bus); o.start(t); o.stop(t + dur + 0.05);
+}
+function scheduleMusic() {
+  const c = music.ctx, eighth = 60 / BPM / 2;
+  while (music.next < c.currentTime + 1.5) { // long look-ahead: background tabs throttle timers to ~1 s
+    const s = music.step, chord = CHORDS[Math.floor(s / 8) % 4], i = s % 8, t = music.next;
+    tone(t, mtof(chord[ARP[i]] + 24), 0.9, 0.07, 'triangle');
+    if (i === 0) for (const n of chord) tone(t, mtof(n + 12), eighth * 8, 0.03, 'sine', 0.35);
+    if (i === 0 || i === 4) tone(t, mtof(chord[0] - 12), 0.7, 0.14, 'sine', 0.02);
+    if (i === 6 && Math.floor(s / 8) % 2 === 1) tone(t, mtof(chord[2] + 36), 0.8, 0.045, 'sine');
+    music.next += eighth; music.step++;
+  }
+}
+function startMusic() {
+  if (MUSIC_FILE) {
+    music.el = music.el || Object.assign(new Audio(MUSIC_FILE), { loop: true, volume: 0.4 });
+    if (music.on) music.el.play().catch(() => {});
+    return;
+  }
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+  if (!music.ctx) {
+    const c = music.ctx = new AC();
+    const master = c.createGain(); master.gain.value = 0.5; master.connect(c.destination);
+    const bus = music.bus = c.createGain(); bus.connect(master);
+    const echo = c.createDelay(1), fb = c.createGain(); echo.delayTime.value = 60 / BPM * 0.75; fb.gain.value = 0.35;
+    bus.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(master); // soft echo for sparkle
+    music.next = c.currentTime + 0.1;
+    music.timer = setInterval(scheduleMusic, 250);
+  }
+  if (music.on) music.ctx.resume();
+}
+document.getElementById('tMusic').addEventListener('click', (e) => {
+  const b = e.currentTarget; b.blur(); music.on = !music.on; b.setAttribute('aria-pressed', music.on);
+  if (music.el) { music.on ? music.el.play().catch(() => {}) : music.el.pause(); }
+  if (music.ctx) music.on ? music.ctx.resume() : music.ctx.suspend();
+  toast(t('music') + (music.on ? ' ♪' : ' ✕'));
+});
+
 /* ================= multiplayer ================= */
 // The WebSocket relay lives in /server and runs on Render (Vercel cannot hold WebSocket connections).
 // After deploying it, paste its address below, or test with ?mp=wss://your-server.
@@ -656,6 +711,45 @@ function nameLabel(text) {
   s.scale.set(1.25, 0.31, 1); s.position.y = 2.15; s.renderOrder = 10;
   return s;
 }
+// Speech bubble: white card with wrapped text, floats above the name tag.
+function bubbleSprite(text) {
+  const W = 420, pad = 18, font = '600 30px "Be Vietnam Pro", system-ui, sans-serif', lh = 38;
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  x.font = font;
+  const lines = []; let line = '';
+  for (const word of text.split(/\s+/)) {
+    const test = line ? `${line} ${word}` : word;
+    if (x.measureText(test).width > W - pad * 2 && line) { lines.push(line); line = word; } else line = test;
+  }
+  lines.push(line);
+  const shown = lines.slice(0, 4); if (lines.length > 4) shown[3] = shown[3].replace(/.{0,2}$/, '…');
+  const textW = Math.max(...shown.map(l => x.measureText(l).width));
+  const w = Math.min(W, Math.ceil(textW + pad * 2)), h = shown.length * lh + pad * 2 - 6, tail = 16;
+  c.width = W; c.height = h + tail;
+  x.font = font; x.textBaseline = 'middle';
+  const left = (W - w) / 2;
+  x.fillStyle = 'rgba(255,255,255,.96)'; x.beginPath(); x.roundRect(left, 0, w, h, 22); x.fill();
+  x.beginPath(); x.moveTo(W / 2 - 12, h - 1); x.lineTo(W / 2 + 12, h - 1); x.lineTo(W / 2, h + tail); x.fill();
+  x.fillStyle = '#0a1840'; x.textAlign = 'center';
+  shown.forEach((l, i) => x.fillText(l, W / 2, pad + lh / 2 - 3 + i * lh, W - pad * 2));
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const ws = 0.0043 * W; s.scale.set(ws, ws * c.height / W, 1);
+  s.center.set(0.5, 0); s.position.y = 2.38; s.renderOrder = 11; // anchored at its bottom edge, just above the name tag
+  return s;
+}
+function disposeSprite(s) { s.parent && s.parent.remove(s); s.material.map.dispose(); s.material.dispose(); }
+function setLabel(h, name) {
+  if (name === h.name) return; h.name = name;
+  if (h.label) { disposeSprite(h.label); h.label = null; }
+  if (name) { h.label = nameLabel(name); h.group.add(h.label); }
+}
+const BUBBLE_MS = 6500;
+function showBubble(h, text) {
+  if (h.bubble) disposeSprite(h.bubble);
+  h.bubble = bubbleSprite(text); h.group.add(h.bubble); h.until = performance.now() + BUBBLE_MS;
+}
+const own = { group: avatar, label: null, name: '', bubble: null, until: 0 }; // your own avatar, so your bubble shows too
 function addPeer(id) {
   if (!avatarProto) return null;
   const group = new THREE.Group();
@@ -676,7 +770,8 @@ function addPeer(id) {
 function removePeer(id) {
   const p = peers.get(id); if (!p) return;
   scene.remove(p.group);
-  if (p.label) { p.label.material.map.dispose(); p.label.material.dispose(); }
+  if (p.label) disposeSprite(p.label);
+  if (p.bubble) disposeSprite(p.bubble);
   p.group.traverse(o => { if (o.isMesh) o.material.dispose(); });
   peers.delete(id);
 }
@@ -709,7 +804,11 @@ function mpConnect() {
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.t === 'hi') { myId = m.id; return; }
-    if (m.t === 'm') { addChat(String(m.n), String(m.m)); return; }
+    if (m.t === 'm') {
+      addChat(String(m.n), String(m.m));
+      const h = m.id === myId ? own : peers.get(m.id); if (h) showBubble(h, String(m.m));
+      return;
+    }
     if (m.t !== 's') return;
     mpTotal = m.n; setOnline();
     const seen = new Set();
@@ -719,7 +818,7 @@ function mpConnect() {
       const p = peers.get(id) || addPeer(id); if (!p) continue;
       p.tx = x; p.ty = y; p.tz = z; p.tyaw = yaw; p.anim = anim;
       if (p.fresh) { p.group.position.set(x, y, z); p.group.rotation.y = yaw; p.fresh = false; }
-      if (name !== p.name) { p.name = name; if (p.label) p.group.remove(p.label); p.label = nameLabel(name); p.group.add(p.label); }
+      setLabel(p, name);
     }
     for (const id of [...peers.keys()]) if (!seen.has(id)) removePeer(id);
   };
@@ -735,6 +834,8 @@ function mpUpdate(dt, now) {
     mpSendAt = now;
     ws.send(JSON.stringify({ t: 'u', x: +player.x.toFixed(2), y: +(player.y - SEG - R).toFixed(2), z: +player.z.toFixed(2), r: +bodyYaw.toFixed(2), a: myAnim, n: myName() }));
   }
+  setLabel(own, ws && ws.readyState === 1 ? (myName() || (myId ? `Guest ${myId}` : '')) : '');
+  for (const h of [own, ...peers.values()]) if (h.bubble && now > h.until) { disposeSprite(h.bubble); h.bubble = null; }
   const k = 1 - Math.exp(-dt * 12);
   for (const p of peers.values()) {
     const g = p.group;
