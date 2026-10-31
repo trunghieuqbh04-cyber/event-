@@ -637,12 +637,12 @@ fetchModel().then(buf => loader.parse(buf, './', (gltf) => {
 function onErr(err) { console.error(err); loadState = 'error'; applyLang(); }
 
 /* ================= background music ================= */
-// Generated live with WebAudio (a music-box arpeggio over C - Am - F - G), so there is no audio file and no licensing question.
+// Generated live with WebAudio (a slow music-box arpeggio over C - Am - F - G), so there is no audio file and no licensing question.
 // To use a real track instead, set MUSIC_FILE to its path (for example './music.mp3').
 const MUSIC_FILE = '';
 const music = { ctx: null, bus: null, on: true, timer: null, next: 0, step: 0, el: null };
 const CHORDS = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]];
-const ARP = [0, 1, 2, 1, 0, 1, 2, 1], BPM = 96;
+const ARP = [0, 1, 2, 1, 0, 1, 2, 1], BPM = 76;
 const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
 function tone(t, freq, dur, vol, type, attack = 0.01) {
   const o = music.ctx.createOscillator(), g = music.ctx.createGain();
