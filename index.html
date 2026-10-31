@@ -1,0 +1,658 @@
+<title>Demo Event</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Demo Event: walk through the 3D event venue concept.">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700&family=Be+Vietnam+Pro:wght@400;500;600&display=swap">
+<style>
+  /* Layout: full-bleed walkable 3D venue; brand chip top-left, language top-right, control dock along the bottom.
+     One deliberate dark look (a venue at night), coloured from the logo: navy ground, signal orange accent. */
+  :root {
+    --bg: #050d24;
+    --navy: #00308a;
+    --panel: rgba(6, 18, 52, 0.78);
+    --line: rgba(160, 190, 255, 0.2);
+    --fg: #f3f6ff;
+    --muted: #9fb0d6;
+    --accent: #f45120;
+    --display: "Unbounded", "Trebuchet MS", system-ui, sans-serif;
+    --body: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--body); overflow: hidden; -webkit-user-select: none; user-select: none; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .brand {
+    position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
+    display: flex; gap: 10px; align-items: center; pointer-events: none; z-index: 5;
+  }
+  .brand img { width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.45); }
+  .brand b { display: block; font-family: var(--display); font-weight: 700; font-size: 18px; letter-spacing: .01em; text-shadow: 0 2px 12px rgba(0,0,0,.7); }
+  .brand small { display: block; font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
+
+  .topright {
+    position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex; gap: 8px; align-items: center; z-index: 6;
+  }
+  .seg { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; backdrop-filter: blur(6px); }
+  .seg button { border: 0; background: transparent; padding: 6px 11px; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  button {
+    font: 600 13px/1 var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 14px; cursor: pointer; backdrop-filter: blur(6px); white-space: nowrap;
+  }
+  button:hover { border-color: var(--accent); }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .icon-btn { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; font-size: 15px; }
+
+  .dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; justify-content: space-between;
+    background: linear-gradient(to top, rgba(5,13,36,.92), rgba(5,13,36,.5) 70%, transparent);
+  }
+  .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+  .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); margin-right: 2px; }
+
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%,-50%); pointer-events: none; z-index: 4; }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: rgba(255,255,255,.85); mix-blend-mode: difference; }
+  #crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
+  #crosshair::after { top: 8px; left: 0; height: 2px; width: 18px; }
+
+  #toast {
+    position: fixed; left: 50%; top: calc(70px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 6;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+    pointer-events: none; transition: opacity .25s; opacity: 0;
+  }
+  #toast.on { opacity: 1; }
+
+  /* start / pause card */
+  #intro {
+    position: fixed; inset: 0; z-index: 10; display: grid; place-items: center;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px;
+    background: radial-gradient(ellipse at center, rgba(0,48,138,.55), rgba(5,13,36,.9) 70%);
+  }
+  .card {
+    width: min(460px, 100%); background: rgba(6, 18, 52, 0.9); border: 1px solid var(--line); border-radius: 18px;
+    padding: 22px 22px 20px; display: grid; gap: 14px; max-height: 100%; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  .card header { display: flex; gap: 12px; align-items: center; }
+  .card header img { width: 52px; height: 52px; border-radius: 12px; }
+  .card h1 { font-family: var(--display); font-size: 24px; margin: 0; text-wrap: balance; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; font-size: 13.5px; }
+  .keys kbd {
+    font: 600 12px/1 var(--body); background: rgba(255,255,255,.08); border: 1px solid var(--line); border-bottom-width: 3px;
+    border-radius: 6px; padding: 5px 7px; display: inline-block; min-width: 26px; text-align: center; margin-right: 3px;
+  }
+  .card .go { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 15px; padding: 13px 18px; justify-self: stretch; }
+  #loadwrap { display: grid; gap: 8px; }
+  .bar { height: 5px; background: var(--line); border-radius: 5px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--navy), var(--accent)); transition: width .2s; }
+  #loadnote { font-size: 12.5px; color: var(--muted); }
+
+  /* touch controls */
+  #touch { display: none; }
+  body.touch #touch { display: block; }
+  body.touch .desk-only { display: none !important; }
+  body:not(.touch) .touch-only { display: none !important; }
+  #joy {
+    position: fixed; z-index: 5; left: max(24px, calc(env(safe-area-inset-left, 0px) + 16px)); bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    width: 124px; height: 124px; border-radius: 50%; background: rgba(6,18,52,.45); border: 1px solid var(--line); touch-action: none;
+  }
+  #joy i { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(244,81,32,.85); box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+  .tbtns { position: fixed; z-index: 5; right: max(24px, calc(env(safe-area-inset-right, 0px) + 16px)); bottom: calc(100px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px; justify-items: end; }
+  .tbtns button { width: 64px; height: 64px; border-radius: 50%; padding: 0; font-size: 12px; touch-action: none; }
+  .tbtns .big { width: 78px; height: 78px; font-size: 13px; background: rgba(244,81,32,.85); border-color: var(--accent); }
+  body.touch .dock { justify-content: flex-start; }
+  body.touch .dock .group { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+
+  @media (max-width: 560px) {
+    .brand small { display: none; }
+    .brand b { font-size: 16px; }
+    .dock .label { display: none; }
+  }
+</style>
+
+<div id="stage"></div>
+<div id="crosshair" hidden></div>
+<div class="brand"><img src="logo.png" alt=""><div><b>Demo Event</b><small data-i18n="tag"></small></div></div>
+<div class="topright">
+  <div class="seg" role="group" aria-label="Language">
+    <button id="lEN" data-lang="en">EN</button><button id="lVI" data-lang="vi">VIE</button>
+  </div>
+  <button class="icon-btn" id="helpBtn" aria-label="Help">?</button>
+</div>
+<div id="toast"></div>
+
+<div class="dock">
+  <div class="group" id="zones">
+    <span class="label" data-i18n="go"></span>
+    <button data-zone="entry" data-i18n="z_entry"></button>
+    <button data-zone="checkin" data-i18n="z_checkin"></button>
+    <button data-zone="hall" data-i18n="z_hall"></button>
+    <button data-zone="stage" data-i18n="z_stage"></button>
+    <button data-zone="razer" data-i18n="z_razer"></button>
+  </div>
+  <div class="group">
+    <span class="label" data-i18n="view"></span>
+    <button id="tView" data-i18n="v1"></button>
+    <button id="tFly" aria-pressed="false" data-i18n="fly"></button>
+    <span class="label" data-i18n="light"></span>
+    <button id="tNight" aria-pressed="true" data-i18n="night"></button>
+    <button id="tShow" aria-pressed="true" data-i18n="beams"></button>
+    <button id="tBlink" aria-pressed="true" data-i18n="blink"></button>
+  </div>
+</div>
+
+<div id="touch">
+  <div id="joy"><i></i></div>
+  <div class="tbtns">
+    <button id="bDown" hidden>▼</button>
+    <button id="bJump" class="big" data-i18n="jump"></button>
+    <button id="bRun" data-i18n="run"></button>
+  </div>
+</div>
+
+<div id="intro">
+  <div class="card">
+    <header><img src="logo.png" alt=""><div><h1>Demo Event</h1><p data-i18n="intro"></p></div></header>
+    <div class="keys desk-only">
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span data-i18n="k_move"></span>
+      <span><kbd>Space</kbd></span><span data-i18n="k_jump"></span>
+      <span><kbd>Shift</kbd></span><span data-i18n="k_run"></span>
+      <span><kbd>Mouse</kbd></span><span data-i18n="k_look"></span>
+      <span><kbd>V</kbd><kbd>F5</kbd></span><span data-i18n="k_view"></span>
+      <span><kbd>F</kbd></span><span data-i18n="k_fly"></span>
+      <span><kbd>Esc</kbd></span><span data-i18n="k_esc"></span>
+    </div>
+    <div class="keys touch-only">
+      <span><kbd>◉</kbd></span><span data-i18n="t_move"></span>
+      <span><kbd>☝</kbd></span><span data-i18n="t_look"></span>
+      <span><kbd>⤒</kbd></span><span data-i18n="t_jump"></span>
+    </div>
+    <div id="loadwrap"><div class="bar"><i id="prog"></i></div><span id="loadnote"></span></div>
+    <button class="go" id="goBtn" disabled></button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
+
+/* ================= i18n ================= */
+const T = {
+  en: {
+    tag: 'Venue concept preview', go: 'Go to', z_entry: 'Entrance', z_checkin: 'Check-in', z_hall: 'Main hall', z_stage: 'Stage', z_razer: 'Razer zone',
+    view: 'View', v0: 'First person', v1: 'Third person', v2: 'Front view', fly: 'Fly', light: 'Lighting',
+    night: 'Night mode', beams: 'Moving heads', blink: 'Blink', jump: 'Jump', run: 'Run',
+    intro: 'Walk through the event venue concept as a character, like a block game.',
+    k_move: 'Walk', k_jump: 'Jump (fly up when flying)', k_run: 'Run (fly down when flying)', k_look: 'Look around',
+    k_view: 'Switch view: first, third, front', k_fly: 'Fly mode on/off', k_esc: 'Pause and show the cursor',
+    t_move: 'Left stick to walk', t_look: 'Drag anywhere else to look around', t_jump: 'Buttons on the right to jump and run',
+    loading: 'Loading the venue', building: 'Preparing walls and floor…', start: 'Start exploring', resume: 'Resume',
+    err: 'The venue could not load. Check your connection and refresh the page.', flyOn: 'Fly mode on', flyOff: 'Fly mode off',
+  },
+  vi: {
+    tag: 'Bản thiết kế ý tưởng sự kiện', go: 'Đi tới', z_entry: 'Lối vào', z_checkin: 'Check-in', z_hall: 'Sảnh chính', z_stage: 'Sân khấu', z_razer: 'Khu Razer',
+    view: 'Góc nhìn', v0: 'Ngôi thứ nhất', v1: 'Ngôi thứ ba', v2: 'Nhìn trước mặt', fly: 'Bay', light: 'Ánh sáng',
+    night: 'Chế độ tối', beams: 'Đèn quét', blink: 'Nhấp nháy', jump: 'Nhảy', run: 'Chạy',
+    intro: 'Điều khiển nhân vật đi dạo quanh bản thiết kế sự kiện, như trong game khối vuông.',
+    k_move: 'Di chuyển', k_jump: 'Nhảy (bay lên khi đang bay)', k_run: 'Chạy nhanh (bay xuống khi đang bay)', k_look: 'Xoay góc nhìn',
+    k_view: 'Đổi góc nhìn: thứ nhất, thứ ba, phía trước', k_fly: 'Bật/tắt chế độ bay', k_esc: 'Tạm dừng, hiện con trỏ',
+    t_move: 'Cần trái để di chuyển', t_look: 'Vuốt chỗ khác trên màn hình để xoay', t_jump: 'Nút bên phải để nhảy và chạy',
+    loading: 'Đang tải sảnh sự kiện', building: 'Đang dựng tường và sàn…', start: 'Bắt đầu khám phá', resume: 'Tiếp tục',
+    err: 'Không tải được sảnh. Kiểm tra kết nối mạng rồi tải lại trang.', flyOn: 'Đã bật chế độ bay', flyOff: 'Đã tắt chế độ bay',
+  },
+};
+// English by default; the EN/VIE switch is remembered per browser.
+let lang = 'en';
+try { lang = localStorage.getItem('demoEventLang') || 'en'; } catch {}
+const t = (k) => (T[lang] && T[lang][k]) || T.en[k] || k;
+let loadState = 'loading';
+function applyLang() {
+  document.documentElement.lang = lang === 'vi' ? 'vi' : 'en';
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+  document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === lang));
+  document.getElementById('tView').textContent = t('v' + viewMode);
+  const go = document.getElementById('goBtn');
+  go.textContent = loadState === 'ready' ? (started ? t('resume') : t('start')) : t('loading') + '…';
+  const note = document.getElementById('loadnote');
+  note.textContent = loadState === 'error' ? t('err') : loadState === 'build' ? t('building') : loadState === 'ready' ? '' : t('loading') + ' · 4.5 MB';
+}
+document.querySelectorAll('[data-lang]').forEach(b => b.addEventListener('click', (e) => {
+  e.stopPropagation(); lang = b.dataset.lang; try { localStorage.setItem('demoEventLang', lang); } catch {} applyLang();
+}));
+
+/* ================= renderer / scene ================= */
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (isTouch) document.body.classList.add('touch');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const host = document.getElementById('stage');
+// No logarithmic depth buffer: it makes polygonOffset a no-op, so coplanar decals could not be fixed. The hall is small, so a normal 24-bit depth buffer is plenty.
+// Rendered straight to the canvas with native MSAA. The EffectComposer + bloom chain drew only a strip of the frame on some GPUs, so it was removed.
+const renderer = new THREE.WebGLRenderer({ antialias: !isTouch, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.25 : 1.6));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+host.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.background = new THREE.Color(0x050d24);
+const hemi = new THREE.HemisphereLight(0xf2f4ff, 0x1a1830, 0.4);
+scene.add(hemi);
+// warm house lights along the hall so night mode still reads
+const houseLights = [];
+for (const z of [28, 18, 8]) {
+  const p = new THREE.PointLight(0xffd9b0, 18, 16, 1.6); p.position.set(0, 4.6, z); scene.add(p); houseLights.push(p);
+}
+
+const camera = new THREE.PerspectiveCamera(70, 1, 0.15, 100);
+camera.rotation.order = 'YXZ';
+
+/* ================= moving-head beams (same rig as the earlier viewer) ================= */
+const beamMat = (color) => new THREE.ShaderMaterial({
+  uniforms: { uColor: { value: new THREE.Color(color) }, uStrength: { value: 0.32 } },
+  vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nvarying float vY; void main(){ vY = uv.y; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.);\n#include <logdepthbuf_vertex>\n}',
+  fragmentShader: '#include <logdepthbuf_pars_fragment>\nuniform vec3 uColor; uniform float uStrength; varying float vY; void main(){\n#include <logdepthbuf_fragment>\nfloat a = pow(vY, 1.6)*uStrength; gl_FragColor = vec4(uColor*a, a); }',
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+const movers = [];
+function addMover(pos, aim, color, phase, sweep, intensity = 55, len = 7) {
+  const light = new THREE.SpotLight(color, intensity, 0, 0.16, 0.5, 2);
+  light.position.set(...pos);
+  scene.add(light, light.target);
+  const geo = new THREE.ConeGeometry(Math.tan(0.16) * len, len, 32, 1, true);
+  geo.translate(0, -len / 2, 0);
+  const cone = new THREE.Mesh(geo, beamMat(color));
+  cone.position.set(...pos);
+  scene.add(cone);
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.22, 16), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: .6, roughness: .4 }));
+  head.position.set(pos[0], pos[1] + 0.12, pos[2]);
+  scene.add(head);
+  movers.push({ light, cone, intensity, base: new THREE.Vector3(...aim), phase, sweep });
+}
+addMover([-4.2, 5.4, 0.5], [-1.5, 1.2, -2.8], 0xff4fa3, 0.0, [2.6, 0.8]);
+addMover([-1.4, 5.4, 0.8], [1.0, 1.0, -2.8], 0xf45120, 1.3, [2.2, 0.6]);
+addMover([1.4, 5.4, 0.8], [-1.0, 1.0, -2.8], 0x6fd9ff, 2.6, [2.2, 0.6]);
+addMover([4.2, 5.4, 0.5], [1.5, 1.2, -2.8], 0x9b6bff, 3.9, [2.6, 0.8]);
+addMover([3.0, 5.4, 22.6], [6.1, 0.6, 27.0], 0xffb3d9, 0.7, [1.6, 0.5], 25, 7.2);
+addMover([7.6, 5.4, 20.6], [8.4, 0.6, 25.0], 0xffd7a0, 2.1, [1.6, 0.5], 25, 7.2);
+
+/* ================= character (rigged mannequin, idle / walk / run) ================= */
+const avatar = new THREE.Group();
+scene.add(avatar);
+let mixer = null; const acts = {}; let curAct = null;
+function playAct(name, fade = 0.25) {
+  const a = acts[name]; if (!a || curAct === a) return;
+  a.reset().setEffectiveWeight(1).fadeIn(fade).play();
+  if (curAct) curAct.fadeOut(fade);
+  curAct = a;
+}
+async function fetchB64(url, onProg, guess) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const total = +res.headers.get('content-length') || guess;
+  const reader = res.body.getReader(); const chunks = []; let got = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; onProg && onProg(got / total); }
+  const b64 = new TextDecoder().decode(await new Blob(chunks).arrayBuffer()).trim();
+  const bin = atob(b64); const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+function loadAvatar() {
+  return fetchB64('./avatar.b64.txt', null, 3906712).then(buf => new Promise((ok, bad) => new GLTFLoader().parse(buf, './', (g) => {
+    const m = g.scene;
+    m.rotation.y = Math.PI; // Mixamo faces +Z; our forward is -Z
+    m.traverse(o => {
+      if (!o.isMesh) return;
+      o.frustumCulled = false;
+      const joints = /Joints/i.test(o.material.name);
+      o.material = new THREE.MeshStandardMaterial({ color: joints ? 0xf45120 : 0xdfe6f5, roughness: joints ? 0.45 : 0.55, metalness: joints ? 0.2 : 0.05 });
+    });
+    avatar.add(m);
+    mixer = new THREE.AnimationMixer(m);
+    for (const c of g.animations) acts[c.name] = mixer.clipAction(c);
+    playAct('idle', 0);
+    ok();
+  }, bad)));
+}
+
+/* ================= player physics (capsule vs BVH) ================= */
+const R = 0.3, SEG = 1.2;            // capsule: radius + segment; feet = top sphere centre - SEG - R
+const player = new THREE.Vector3();  // top sphere centre
+const vel = new THREE.Vector3();
+let onGround = false, collider = null, yaw = 0, pitch = -0.05, viewMode = 1, fly = false, started = false;
+const keys = {};
+const GRAV = -24, JUMP = 8.2, WALK = 4.3, RUN = 6.8;
+
+const ZONES = {
+  entry:   { p: [0, 30.5], yaw: 0 },
+  checkin: { p: [2.4, 24.5], look: [7.3, 28.2] },
+  hall:    { p: [0, 18], yaw: 0 },
+  stage:   { p: [0, 7.5], yaw: 0 },
+  razer:   { p: [2.5, 10], look: [9.5, 10] },
+};
+const ray = new THREE.Raycaster(); ray.firstHitOnly = true;
+function floorAt(x, z, fromY = 3.2) {
+  ray.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0, -1, 0)); ray.far = 20;
+  const h = collider ? ray.intersectObject(collider)[0] : null;
+  return h ? h.point.y : 0;
+}
+function teleport(name) {
+  const z = ZONES[name]; const [x, zz] = z.p;
+  const fy = floorAt(x, zz);
+  player.set(x, fy + SEG + R + 0.05, zz); vel.set(0, 0, 0);
+  yaw = z.look ? Math.atan2(-(z.look[0] - x), -(z.look[1] - zz)) : z.yaw; pitch = -0.05;
+}
+
+const tBox = new THREE.Box3(), tSeg = new THREE.Line3(), tv = new THREE.Vector3(), tv2 = new THREE.Vector3(), tri = new THREE.Vector3();
+function physicsStep(dt, wish) {
+  if (fly) {
+    vel.set(wish.x, wish.y, wish.z);
+  } else {
+    vel.x = wish.x; vel.z = wish.z;
+    vel.y = onGround ? Math.max(vel.y, 0) : vel.y + GRAV * dt;
+    if (wish.jump && onGround) { vel.y = JUMP; onGround = false; }
+  }
+  player.addScaledVector(vel, dt);
+  // collide capsule
+  tSeg.start.copy(player); tSeg.end.copy(player); tSeg.end.y -= SEG;
+  tBox.makeEmpty(); tBox.expandByPoint(tSeg.start); tBox.expandByPoint(tSeg.end);
+  tBox.min.addScalar(-R); tBox.max.addScalar(R);
+  collider.geometry.boundsTree.shapecast({
+    intersectsBounds: b => b.intersectsBox(tBox),
+    intersectsTriangle: tr => {
+      const d = tr.closestPointToSegment(tSeg, tri, tv2);
+      if (d < R) {
+        const depth = R - d; const dir = tv2.sub(tri).normalize();
+        tSeg.start.addScaledVector(dir, depth); tSeg.end.addScaledVector(dir, depth);
+      }
+    },
+  });
+  tv.subVectors(tSeg.start, player);
+  onGround = !fly && tv.y > Math.abs(dt * vel.y * 0.25);
+  const off = Math.max(0, tv.length() - 1e-5);
+  tv.normalize().multiplyScalar(off);
+  player.add(tv);
+  if (!onGround) { tv.normalize(); vel.addScaledVector(tv, -tv.dot(vel)); } else vel.y = 0;
+  if (player.y < -12) teleport('entry');
+}
+
+/* ================= input ================= */
+const canvas = renderer.domElement;
+addEventListener('keydown', (e) => {
+  if (e.code === 'F5') { e.preventDefault(); cycleView(); return; }
+  if (!started) return;
+  keys[e.code] = true;
+  if (e.code === 'KeyV') cycleView();
+  if (e.code === 'KeyF') toggleFly();
+  if (e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', (e) => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+const SENS = 0.0022;
+function look(dx, dy, s = SENS) {
+  yaw -= dx * s; pitch = Math.max(-1.5, Math.min(1.5, pitch - dy * s));
+}
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement === canvas) look(e.movementX, e.movementY);
+  else if (drag) { look(e.clientX - drag.x, e.clientY - drag.y, 0.004); drag.x = e.clientX; drag.y = e.clientY; }
+});
+let drag = null;
+canvas.addEventListener('mousedown', (e) => {
+  if (!started || isTouch) return;
+  if (document.pointerLockElement !== canvas) {
+    drag = { x: e.clientX, y: e.clientY };
+    const p = canvas.requestPointerLock?.(); if (p && p.catch) p.catch(() => {});
+  }
+});
+addEventListener('mouseup', () => { drag = null; });
+let hadLock = 0;
+document.addEventListener('pointerlockchange', () => {
+  const locked = document.pointerLockElement === canvas;
+  if (locked) hadLock = performance.now();
+  else if (hadLock && started && !isTouch) { const long = performance.now() - hadLock > 400; hadLock = 0; if (long) showIntro(); }
+});
+
+// touch: joystick + look-drag
+const joy = document.getElementById('joy'), knob = joy.querySelector('i');
+const stick = { id: null, x: 0, y: 0, cx: 0, cy: 0 };
+let lookTouch = null;
+joy.addEventListener('touchstart', (e) => {
+  const tt = e.changedTouches[0]; const r = joy.getBoundingClientRect();
+  stick.id = tt.identifier; stick.cx = r.left + r.width / 2; stick.cy = r.top + r.height / 2; moveStick(tt); e.preventDefault();
+}, { passive: false });
+function moveStick(tt) {
+  let dx = tt.clientX - stick.cx, dy = tt.clientY - stick.cy; const m = Math.hypot(dx, dy), max = 46;
+  if (m > max) { dx *= max / m; dy *= max / m; }
+  stick.x = dx / max; stick.y = dy / max; knob.style.transform = `translate(${dx}px,${dy}px)`;
+}
+canvas.addEventListener('touchstart', (e) => {
+  if (lookTouch !== null) return; const tt = e.changedTouches[0]; lookTouch = { id: tt.identifier, x: tt.clientX, y: tt.clientY }; e.preventDefault();
+}, { passive: false });
+addEventListener('touchmove', (e) => {
+  for (const tt of e.changedTouches) {
+    if (tt.identifier === stick.id) moveStick(tt);
+    else if (lookTouch && tt.identifier === lookTouch.id) { look(tt.clientX - lookTouch.x, tt.clientY - lookTouch.y, 0.0055); lookTouch.x = tt.clientX; lookTouch.y = tt.clientY; }
+  }
+}, { passive: true });
+function endTouch(e) {
+  for (const tt of e.changedTouches) {
+    if (tt.identifier === stick.id) { stick.id = null; stick.x = stick.y = 0; knob.style.transform = ''; }
+    if (lookTouch && tt.identifier === lookTouch.id) lookTouch = null;
+  }
+}
+addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
+const hold = (id, key) => {
+  const b = document.getElementById(id);
+  b.addEventListener('touchstart', (e) => { if (key === 'Run') { touchRun = !touchRun; b.setAttribute('aria-pressed', touchRun); } else keys[key] = true; e.preventDefault(); }, { passive: false });
+  b.addEventListener('touchend', () => { if (key !== 'Run') keys[key] = false; });
+};
+let touchRun = false;
+hold('bJump', 'Space'); hold('bDown', 'Down'); hold('bRun', 'Run');
+
+/* ================= UI ================= */
+const toastEl = document.getElementById('toast'); let toastT;
+function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 1600); }
+function cycleView() { viewMode = (viewMode + 1) % 3; document.getElementById('tView').textContent = t('v' + viewMode); toast(t('v' + viewMode)); }
+function toggleFly() {
+  fly = !fly; vel.set(0, 0, 0); document.getElementById('tFly').setAttribute('aria-pressed', fly);
+  document.getElementById('bDown').hidden = !fly; toast(fly ? t('flyOn') : t('flyOff'));
+}
+document.getElementById('tView').addEventListener('click', (e) => { e.currentTarget.blur(); cycleView(); });
+document.getElementById('tFly').addEventListener('click', (e) => { e.currentTarget.blur(); toggleFly(); });
+document.querySelectorAll('[data-zone]').forEach(b => b.addEventListener('click', () => { b.blur(); if (collider) { teleport(b.dataset.zone); toast(t('z_' + b.dataset.zone)); } }));
+const intro = document.getElementById('intro');
+function showIntro() { intro.hidden = false; applyLang(); }
+document.getElementById('helpBtn').addEventListener('click', (e) => { e.currentTarget.blur(); if (document.pointerLockElement) document.exitPointerLock(); showIntro(); });
+document.getElementById('goBtn').addEventListener('click', () => {
+  if (loadState !== 'ready') return;
+  started = true; intro.hidden = true; applyLang();
+  if (!isTouch) { const p = canvas.requestPointerLock?.(); if (p && p.catch) p.catch(() => {}); }
+});
+
+const state = { night: true, show: true, blink: true };
+function toggle(id, key) {
+  const b = document.getElementById(id);
+  b.addEventListener('click', () => { b.blur(); state[key] = !state[key]; b.setAttribute('aria-pressed', state[key]); applyMode(); });
+}
+toggle('tNight', 'night'); toggle('tShow', 'show'); toggle('tBlink', 'blink');
+function applyMode() {
+  scene.environmentIntensity = state.night ? 0.1 : 1.0;
+  hemi.intensity = state.night ? 0.07 : 1.3;
+  renderer.toneMappingExposure = state.night ? 0.9 : 1.0;
+  for (const l of houseLights) l.intensity = state.night ? 9 : 4;
+  scene.background.set(state.night ? 0x050d24 : 0x9fb3d9);
+  // Keep every light in the scene and dim to 0: toggling .visible changes the light count and recompiles all shaders (a visible hitch).
+  for (const mv of movers) { mv.light.intensity = state.show ? mv.intensity : 0; mv.cone.visible = state.show && state.night; }}
+
+/* ================= load venue ================= */
+const draco = new DRACOLoader().setDecoderPath('./draco/');
+const loader = new GLTFLoader().setDRACOLoader(draco);
+const pulsing = [];
+const fetchModel = () => fetchB64('./stage.b64.txt', (k) => { document.getElementById('prog').style.width = Math.min(96, 100 * k).toFixed(0) + '%'; }, 4473564);
+function buildCollider(root) {
+  root.updateMatrixWorld(true);
+  const parts = []; let total = 0;
+  const m = new THREE.Matrix4(), im = new THREE.Matrix4(), v = new THREE.Vector3(), bb = new THREE.Box3();
+  const addGeom = (g, mat) => {
+    bb.copy(g.boundingBox || (g.computeBoundingBox(), g.boundingBox)).applyMatrix4(mat);
+    if (bb.min.y > 3.4) return; // ceiling dressing: out of reach, skip
+    const p = g.attributes.position, idx = g.index, n = idx ? idx.count : p.count;
+    const out = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { v.fromBufferAttribute(p, idx ? idx.getX(i) : i).applyMatrix4(mat); out[i * 3] = v.x; out[i * 3 + 1] = v.y; out[i * 3 + 2] = v.z; }
+    parts.push(out); total += out.length;
+  };
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const mats = [].concat(o.material);
+    if (mats.every(mm => mm.transparent && mm.opacity < 0.6)) return;
+    if (/glow|beam|light emission/i.test(o.name + ' ' + mats.map(mm => mm.name).join(' '))) return;
+    if (o.isInstancedMesh) { for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, im); addGeom(o.geometry, m.multiplyMatrices(o.matrixWorld, im)); } }
+    else addGeom(o.geometry, o.matrixWorld);
+  });
+  const all = new Float32Array(total); let off = 0;
+  for (const p of parts) { all.set(p, off); off += p.length; }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(all, 3));
+  geo.boundsTree = new MeshBVH(geo);
+  const mesh = new THREE.Mesh(geo); mesh.raycast = acceleratedRaycast;
+  return mesh;
+}
+fetchModel().then(buf => loader.parse(buf, './', (gltf) => {
+  const root = gltf.scene;
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    for (const mm of [].concat(o.material)) {
+      // Thin decals/glass: stop them writing depth (sort-order popping) and pull them slightly toward the camera (coplanar z-fighting).
+      if (mm.transparent || mm.alphaTest > 0) {
+        if (mm.transparent) mm.depthWrite = false;
+        mm.polygonOffset = true; mm.polygonOffsetFactor = -2; mm.polygonOffsetUnits = -2;
+      }
+      if (mm.emissive && mm.emissive.getHex() !== 0) {
+        const base = /LED|Bulb|Emission|Glow|Light/i.test(mm.name) ? 2.0 : 1.4;
+        mm.emissiveIntensity = base;
+        pulsing.push({ m: mm, base, ph: (pulsing.length * 1.7) % 6.28, fast: /Bulb|Marquee/i.test(mm.name) });
+      }
+    }
+  });
+  scene.add(root);
+  loadState = 'build'; applyLang();
+  setTimeout(async () => {
+    collider = buildCollider(root);
+    try { await loadAvatar(); } catch (e) { console.error(e); }
+    teleport('entry');
+    document.getElementById('prog').style.width = '100%';
+    loadState = 'ready'; document.getElementById('goBtn').disabled = false; applyLang();
+    window.__ready = true;
+  }, 30);
+}, onErr)).catch(onErr);
+function onErr(err) { console.error(err); loadState = 'error'; applyLang(); }
+
+/* ================= loop ================= */
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+// Embedded panes can change the stage size without a window resize event, which leaves the render buffer at an old size. Watch the element itself.
+new ResizeObserver(resize).observe(host);applyMode(); applyLang();
+
+const DOWN = new THREE.Vector3(0, -1, 0);
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), wish = new THREE.Vector3(), eye = new THREE.Vector3(), camDir = new THREE.Vector3();
+let last = performance.now(), bodyYaw = 0, camDist = 3.8;
+const crosshair = document.getElementById('crosshair');
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const time = now / 1000;
+  if (collider) {
+    // input → wish velocity
+    let mx = 0, mz = 0;
+    if (started && intro.hidden) {
+      mz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stick.y;
+      mx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stick.x;
+    }
+    const mag = Math.min(1, Math.hypot(mx, mz));
+    const running = keys.ShiftLeft || keys.ShiftRight || touchRun;
+    const speed = (fly ? 9 : (running && !fly ? RUN : WALK));
+    fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw)); right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    wish.set(0, 0, 0).addScaledVector(fwd, mz).addScaledVector(right, mx);
+    if (wish.lengthSq() > 0) wish.normalize().multiplyScalar(speed * mag);
+    const w = { x: wish.x, z: wish.z, y: 0, jump: !!keys.Space };
+    if (fly) w.y = ((keys.Space ? 1 : 0) - ((keys.ShiftLeft || keys.ShiftRight || keys.Down || keys.KeyC) ? 1 : 0)) * 6;
+    const steps = 5; for (let i = 0; i < steps; i++) physicsStep(dt / steps, w);
+
+    // avatar
+    const feetY = player.y - SEG - R;
+    avatar.position.set(player.x, feetY, player.z);
+    const hv = Math.hypot(vel.x, vel.z);
+    if (mixer) {
+      if (fly || (!onGround && vel.y > 0.5)) playAct(hv > 0.5 ? 'walk' : 'idle');
+      else playAct(hv > 5 ? 'run' : hv > 0.3 ? 'walk' : 'idle');
+      if (acts.walk) acts.walk.timeScale = Math.max(0.6, hv / 1.5);
+      mixer.update(dt);
+    }
+    let dy = yaw - bodyYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); bodyYaw += dy * Math.min(1, dt * 10);
+    avatar.rotation.y = bodyYaw;
+
+    // camera
+    eye.set(player.x, feetY + 1.62, player.z);
+    camDir.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+    if (viewMode === 0) {
+      camera.position.copy(eye); camera.rotation.set(pitch, yaw, 0); avatar.visible = false;
+    } else {
+      avatar.visible = true;
+      const sign = viewMode === 1 ? -1 : 1; const want = 3.8;
+      const pivot = tv.copy(eye); pivot.y += 0.35;
+      const dir = camDir.clone().multiplyScalar(sign);
+      ray.set(pivot, dir); ray.far = want;
+      const hit = ray.intersectObject(collider)[0];
+      const target = hit ? Math.max(0.5, hit.distance - 0.3) : want;
+      // pull in fast when something blocks, ease back out slowly: no popping
+      camDist = target < camDist ? target : camDist + (target - camDist) * Math.min(1, dt * 2.5);
+      camera.position.copy(pivot).addScaledVector(dir, camDist);
+      camera.lookAt(pivot);
+    }
+    crosshair.hidden = !(started && intro.hidden && viewMode === 0);
+  } else {
+    // idle orbit while loading
+    camera.position.set(Math.sin(time * 0.1) * 10, 4, 16 + Math.cos(time * 0.1) * 10); camera.lookAt(0, 1.5, 8);
+  }
+
+  const sp = reduce ? 0 : 1;
+  for (const mv of movers) {
+    tv.copy(mv.base);
+    tv.x += Math.sin(time * 0.55 * sp + mv.phase) * mv.sweep[0];
+    tv.z += Math.cos(time * 0.41 * sp + mv.phase) * mv.sweep[1];
+    mv.light.target.position.copy(tv);
+    tv2.copy(tv).sub(mv.cone.position).normalize();
+    mv.cone.quaternion.setFromUnitVectors(DOWN, tv2);
+  }
+  for (const p of pulsing) {
+    const k = state.blink && !reduce ? (p.fast ? 0.8 + 0.2 * Math.sin(time * 2.4 + p.ph) : 0.93 + 0.07 * Math.sin(time * 0.7 + p.ph)) : 1;
+    p.m.emissiveIntensity = p.base * k * (state.night ? 1 : 0.6);
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
