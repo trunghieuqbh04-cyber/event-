@@ -318,7 +318,7 @@ const hemi = new THREE.HemisphereLight(0xf2f4ff, 0x1a1830, 0.4);
 scene.add(hemi);
 // warm house lights along the hall so night mode still reads
 const houseLights = [];
-for (const z of [28, 18, 8]) {
+for (const z of [8, -1, -9]) {
   const p = new THREE.PointLight(0xffd9b0, 18, 16, 1.6); p.position.set(0, 4.6, z); scene.add(p); houseLights.push(p);
 }
 
@@ -347,12 +347,12 @@ function addMover(pos, aim, color, phase, sweep, intensity = 55, len = 7) {
   scene.add(head);
   movers.push({ light, cone, intensity, base: new THREE.Vector3(...aim), phase, sweep });
 }
-addMover([-4.2, 5.4, 0.5], [-1.5, 1.2, -2.8], 0xff4fa3, 0.0, [2.6, 0.8]);
-addMover([-1.4, 5.4, 0.8], [1.0, 1.0, -2.8], 0xf45120, 1.3, [2.2, 0.6]);
-addMover([1.4, 5.4, 0.8], [-1.0, 1.0, -2.8], 0x6fd9ff, 2.6, [2.2, 0.6]);
-addMover([4.2, 5.4, 0.5], [1.5, 1.2, -2.8], 0x9b6bff, 3.9, [2.6, 0.8]);
-addMover([3.0, 5.4, 22.6], [6.1, 0.6, 27.0], 0xffb3d9, 0.7, [1.6, 0.5], 25, 7.2);
-addMover([7.6, 5.4, 20.6], [8.4, 0.6, 25.0], 0xffd7a0, 2.1, [1.6, 0.5], 25, 7.2);
+addMover([-7.6, 5.0, -4.5], [-4.9, 1.2, -9.0], 0xff4fa3, 0.0, [2.6, 0.8]);
+addMover([-4.8, 5.0, -4.2], [-2.4, 1.0, -9.0], 0xf45120, 1.3, [2.2, 0.6]);
+addMover([-2.0, 5.0, -4.2], [-4.4, 1.0, -9.0], 0x6fd9ff, 2.6, [2.2, 0.6]);
+addMover([0.8, 5.0, -4.5], [-1.9, 1.2, -9.0], 0x9b6bff, 3.9, [2.6, 0.8]);
+addMover([6.0, 5.0, 9.0], [9.0, 0.6, 5.0], 0xffb3d9, 0.7, [1.6, 0.5], 25, 7.2);
+addMover([10.0, 5.0, 8.0], [7.0, 0.6, 3.5], 0xffd7a0, 2.1, [1.6, 0.5], 25, 7.2);
 
 /* ================= character (rigged mannequin, idle / walk / run) ================= */
 const avatar = new THREE.Group();
@@ -379,13 +379,56 @@ async function fetchB64(url, onProg, guess) {
 function loadAvatar() {
   return fetchB64('./avatar.b64.txt', null, 3906712).then(buf => new Promise((ok, bad) => new GLTFLoader().parse(buf, './', (g) => {
     const m = g.scene;
+    m.scale.setScalar(1.68 / 1.81); // source rig is 1.81 m tall; scale to a 1.68 m person (camera eye stays at 1.62 m)
+    m.updateMatrixWorld(true);
+    // Replace the robot body with a plain, simple person built from primitives attached to the same skeleton (keeps idle/walk/run).
+    const bone = {}; m.traverse(o => { if (o.isBone) bone[o.name.replace('mixamorig', '')] = o; });
+    const std = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, metalness: 0 });
+    const SHIRT = std(0xf45120), SKIN = std(0xf1c9a5), PANTS = std(0x1b2a5c), SHOE = std(0xf3f3f3), DARK = std(0x111111);
+    const wp = new THREE.Vector3(), wp2 = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    const unit = (b) => b.getWorldScale(wp).x / m.scale.x;                 // metres per bone-local unit
+    const localOf = (a, b, off) => { b.getWorldPosition(wp2); if (off) wp2.add(off); return a.worldToLocal(wp2.clone()); };
+    const add = (a, mesh) => { mesh.traverse(o => { o.frustumCulled = false; }); a.add(mesh); return mesh; };
+    const limb = (a, b, r, mat) => { const p = localOf(a, b), k = unit(a), rr = r / k; const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(rr, Math.max(1e-4, p.length() - 2 * rr), 4, 12), mat); mesh.position.copy(p).multiplyScalar(0.5); mesh.quaternion.setFromUnitVectors(up, p.clone().normalize()); mesh.userData.mat = mat; return add(a, mesh); };
+    const ball = (a, b, r, mat, t = 0, off) => { const p = localOf(a, b, off), k = unit(a); const mesh = new THREE.Mesh(new THREE.SphereGeometry(r / k, 20, 14), mat); mesh.position.copy(p).multiplyScalar(t || 1); return add(a, mesh); };
+    m.traverse(o => { if (o.isMesh) { o.visible = false; o.frustumCulled = false; } }); // hide the robot body
+    limb(bone.Hips, bone.Spine2, 0.15, PANTS);                              // hips / lower torso
+    limb(bone.Spine, bone.Neck, 0.16, SHIRT);                               // chest and belly
+    limb(bone.Neck, bone.Head, 0.045, SKIN);
+    {                                                                       // friendly face: bigger head, hair, eyes, smile, blush
+      const S = m.scale.x, kh = unit(bone.Head), qInv = new THREE.Quaternion(), qx = new THREE.Quaternion();
+      bone.Head.getWorldQuaternion(qInv).invert();
+      const hc = bone.Head.getWorldPosition(new THREE.Vector3()).lerp(bone.HeadTop_End.getWorldPosition(new THREE.Vector3()), 0.5); // head centre (world)
+      const part = (geo, mat, x, y, z, rx = 0, rz = 0) => { // x,y,z in avatar metres relative to head centre; rx/rz extra world rotation
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.copy(bone.Head.worldToLocal(hc.clone().add(new THREE.Vector3(x * S, y * S, z * S))));
+        qx.setFromEuler(new THREE.Euler(rx, 0, rz)); mesh.quaternion.copy(qInv).multiply(qx);
+        return add(bone.Head, mesh);
+      };
+      const HAIR = std(0x3a2a22), WHITE = std(0xffffff), BLUSH = std(0xf59aa0), MOUTH = std(0x7a2e2e);
+      const HR = 0.125;
+      part(new THREE.SphereGeometry(HR / kh, 28, 20), SKIN, 0, 0, 0);                                      // head
+      part(new THREE.SphereGeometry(HR * 1.06 / kh, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.56), HAIR, 0, 0.004, -0.004, -0.32); // hair cap, tilted back to show the forehead
+      for (const sx of [-1, 1]) {
+        part(new THREE.SphereGeometry(0.024 / kh, 14, 10), WHITE, sx * 0.045, 0.012, 0.108);              // eye white
+        part(new THREE.SphereGeometry(0.014 / kh, 12, 8), DARK, sx * 0.045, 0.012, 0.124);                // pupil
+        const b = part(new THREE.SphereGeometry(0.02 / kh, 12, 8), BLUSH, sx * 0.075, -0.03, 0.092);      // blush
+        b.scale.z = 0.35;
+      }
+      part(new THREE.TorusGeometry(0.03 / kh, 0.0045 / kh, 8, 20, Math.PI), MOUTH, 0, -0.045, 0.118, 0, Math.PI); // smile
+    }
+    for (const s of ['Left', 'Right']) {
+      ball(bone[s + 'Arm'], bone[s + 'Arm'], 0.06, SHIRT);                  // shoulder
+      limb(bone[s + 'Arm'], bone[s + 'ForeArm'], 0.05, SHIRT);              // sleeve
+      limb(bone[s + 'ForeArm'], bone[s + 'Hand'], 0.042, SKIN);
+      ball(bone[s + 'Hand'], bone[s + 'Hand'], 0.046, SKIN);
+      limb(bone[s + 'UpLeg'], bone[s + 'Leg'], 0.085, PANTS);
+      limb(bone[s + 'Leg'], bone[s + 'Foot'], 0.062, PANTS);
+      limb(bone[s + 'Foot'], bone[s + 'ToeBase'], 0.055, SHOE);
+      limb(bone[s + 'ToeBase'], bone[s + 'Toe_End'], 0.05, SHOE);
+    }
+    SHIRT.userData.shirt = true;
     m.rotation.y = Math.PI; // Mixamo faces +Z; our forward is -Z
-    m.traverse(o => {
-      if (!o.isMesh) return;
-      o.frustumCulled = false;
-      const joints = /Joints/i.test(o.material.name);
-      o.material = new THREE.MeshStandardMaterial({ color: joints ? 0xf45120 : 0xdfe6f5, roughness: joints ? 0.45 : 0.55, metalness: joints ? 0.2 : 0.05 });
-    });
     avatar.add(m);
     avatarProto = m; avatarClips = g.animations;
     mixer = new THREE.AnimationMixer(m);
@@ -404,11 +447,11 @@ const keys = {};
 const GRAV = -24, JUMP = 8.2, WALK = 4.3, RUN = 6.8;
 
 const ZONES = {
-  entry:   { p: [0, 30.5], yaw: 0 },
-  checkin: { p: [2.4, 24.5], look: [7.3, 28.2] },
-  hall:    { p: [0, 18], yaw: 0 },
-  stage:   { p: [0, 7.5], yaw: 0 },
-  razer:   { p: [2.5, 10], look: [9.5, 10] },
+  entry:   { p: [-14.5, -4.7], look: [-10, -4.7] },
+  checkin: { p: [4, 3], look: [-1.3, -0.7] },
+  hall:    { p: [8, -2], yaw: 0 },
+  stage:   { p: [-3.4, -4.5], yaw: 0 },
+  razer:   { p: [3, -5], look: [3, -8.9] },
 };
 const ray = new THREE.Raycaster(); ray.firstHitOnly = true;
 function floorAt(x, z, fromY = 3.2) {
@@ -577,7 +620,7 @@ function applyMode() {
 const draco = new DRACOLoader().setDecoderPath('./draco/');
 const loader = new GLTFLoader().setDRACOLoader(draco);
 const pulsing = [];
-const fetchModel = () => fetchB64('./stage.b64.txt', (k) => { document.getElementById('prog').style.width = Math.min(96, 100 * k).toFixed(0) + '%'; }, 4473564);
+const fetchModel = () => fetchB64('./stage.b64.txt', (k) => { document.getElementById('prog').style.width = Math.min(96, 100 * k).toFixed(0) + '%'; }, 7459928);
 function buildCollider(root) {
   root.updateMatrixWorld(true);
   const parts = []; let total = 0;
@@ -759,7 +802,7 @@ function addPeer(id) {
     if (!o.isMesh) return;
     o.frustumCulled = false;
     o.material = o.material.clone();
-    if (o.material.color.getHex() === 0xdfe6f5) o.material.color.setHSL(hue, 0.6, 0.7); // body tint per player; joints keep the accent
+    if (o.material.userData && o.material.userData.shirt) o.material.color.setHSL(hue, 0.65, 0.55); // shirt colour per player
   });
   group.add(m); scene.add(group);
   const pm = new THREE.AnimationMixer(m), pa = {};
