@@ -606,7 +606,26 @@ document.getElementById('goBtn').addEventListener('click', () => {
 const state = { night: true, show: true, blink: true, seats: false };
 // Audience seats are a separate small model, fetched the first time you switch them on (off by default to keep the first load light).
 let seatsRoot = null, seatsLoading = false;
+// Things that stand where the audience seats go. They keep their own spot with seats off and slide aside (z in three.js units) when seats are on.
+// They are walk-through (not part of the collision mesh) so they can move without rebuilding it.
+const MOVABLES = [
+  { file: './mv-character.b64.txt', dx: 0, dz: 5.5, root: null },  // the thumbs-up character
+  { file: './mv-sign.b64.txt', dx: 2.2, dz: 4.2, root: null },     // the 2 m guide post
+];
+function applyMovables() { for (const m of MOVABLES) if (m.root) { m.root.position.x = state.seats ? m.dx : 0; m.root.position.z = state.seats ? m.dz : 0; } }
+async function loadMovables() {
+  for (const m of MOVABLES) {
+    try {
+      const buf = await fetchB64(m.file, null, 1000000);
+      const g = await new Promise((ok, bad) => loader.parse(buf, './', ok, bad));
+      m.root = g.scene; m.root.traverse(o => { if (o.isMesh) o.frustumCulled = true; });
+      scene.add(m.root);
+    } catch (e) { console.error(e); }
+  }
+  applyMovables();
+}
 async function applySeats() {
+  applyMovables();
   if (state.seats && !seatsRoot && !seatsLoading) {
     seatsLoading = true;
     try {
@@ -642,7 +661,7 @@ let mirror = null;
 // Glass size and place from Ver4.blend (0.578 x 1.304 m, centre -7.518/3.29), with the whole mirror assembly scaled 1.25x about its floor origin (-7.5, 3.26).
 // The assembly is also turned 180 degrees about that origin so the glass faces into the hall (offset flips sign, yaw gets +PI).
 const MIRROR = { x: -7.5 - (-7.518 + 7.5) * 1.25, z: 3.26 - (3.29 - 3.26) * 1.25, y0: 0.125 * 1.25, w: 0.578 * 1.25, h: 1.304 * 1.25, yaw: -0.514 + Math.PI };
-const fetchModel = () => fetchB64('./stage.b64.txt', (k) => { document.getElementById('prog').style.width = Math.min(96, 100 * k).toFixed(0) + '%'; }, 13879560);
+const fetchModel = () => fetchB64('./stage.b64.txt', (k) => { document.getElementById('prog').style.width = Math.min(96, 100 * k).toFixed(0) + '%'; }, 12120012);
 function buildCollider(root) {
   root.updateMatrixWorld(true);
   const parts = []; let total = 0;
@@ -700,6 +719,7 @@ fetchModel().then(buf => loader.parse(buf, './', (gltf) => {
   loadState = 'build'; applyLang();
   setTimeout(async () => {
     collider = buildCollider(root);
+    loadMovables(); // not awaited: the venue is already walkable while these small models stream in
     try { await loadAvatar(); } catch (e) { console.error(e); }
     teleport('entry');
     document.getElementById('prog').style.width = '100%';
